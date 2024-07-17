@@ -1,0 +1,8 @@
+*.pdf
+Lib
+pyvenv.cfg
+Scripts
+include
+__pycache__
+*.env
+query2_ref.txt
