@@ -17,8 +17,9 @@ services:
       - ./:/app/
     ports:
       - "127.0.0.1:8000:8000"
+    restart: always
 
-    command: fastapi dev src/main.py --host 0.0.0.0
+    command: fastapi run src/main.py --host 0.0.0.0
   nginx:
     image: nginx:latest
     ports:
@@ -27,6 +28,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       - api
+    restart: always
 
 volumes:
   postgres_data:
