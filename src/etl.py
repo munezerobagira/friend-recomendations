@@ -33,7 +33,7 @@ def extract_tweets_data():
     return tweets
 def extract_popular_hashtags()->list[str]:
     hashtags = []
-    with open("src/etl/dataset/popular.txt", "r") as f:
+    with open("src/etl/dataset/popular_hashtags.txt", "r",encoding='utf-8') as f:
         hashtags=f.readlines()
 
     print(f"Total valid hash parsed: {len(hashtags)}")
@@ -51,12 +51,12 @@ def save_tweets_chunk_to_database(args):
         retweeted_status = tweet.get('retweeted_status', {})
         created_at=datetime.strptime(tweet.get('created_at'), '%a %b %d  %H:%M:%S %z %Y')
         hashtags = tweet.get('entities', {}).get('hashtags', [])
+        hashtags = [hashtag.get('text') for hashtag in hashtags] 
 
         user_id = user_data.get('id_str') or user_data.get('id')
         screen_name = user_data.get('screen_name')
 
-        # Convert hashtags list to a comma-separated string
-        hashtags_str = ','.join([tag['text'] for tag in hashtags])
+
 
 
 
@@ -92,7 +92,7 @@ def save_tweets_chunk_to_database(args):
                 in_reply_to_user_id=in_reply_to_user_id,
                 user_id=user_id,
                 created_at=created_at,
-                hashtags=hashtags_str,
+                hashtags=hashtags,
                 retweeted_status=retweeted_status,
                 retweet_original_user_id=retweeted_status.get('user', {}).get('id_str') or retweeted_status.get('user', {}).get('id')
             )
@@ -147,11 +147,11 @@ def load_to_database(tweets: list):
 
 if __name__ == '__main__':
     try:
-        # load tweets
+    
         create_tables()
         tweets = extract_tweets_data()
         load_to_database(tweets)
-        # load hashtags
+
         hashtags = extract_popular_hashtags()
         save_hashtags_to_database(hashtags)
     except KeyboardInterrupt:

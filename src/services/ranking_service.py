@@ -1,31 +1,35 @@
 import math
-from sqlalchemy import  ScalarResult, or_
+from sqlalchemy import and_ , or_, cast, String,Text
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from models import User, Tweet,PopularHashtag
-
-
+from core.config import ALLOWED_LANGUAGES
+base_query = select(Tweet).where(Tweet.lang.in_(ALLOWED_LANGUAGES))
 
 class RankingService:
     def __init__(self, session:Session):
         self.session: Session=session
+    def get_popular_hashtags(self)->list[PopularHashtag]:
+        
+        popular_hashtags=self.session.scalars(select(PopularHashtag).order_by(PopularHashtag.id.desc())).all()
+        return popular_hashtags
 
     def get_user(self, user_id: int)->User:
-        user=self.session.scalars(select(User).where(User.user_id==f"{user_id}")).first()
+        user=self.session.query(User).filter(User.user_id==f"{user_id}").first()
         return user
-    def get_reply(self, user_id: int):
-
-        reply_tweets=self.session.scalars(select(Tweet).where(Tweet.in_reply_to_user_id != None).where(
+    def get_reply(self, user_id: int)->list[Tweet]:
+        reply_tweets=self.session.scalars(base_query.where(Tweet.in_reply_to_user_id != None).where(
             or_(Tweet.user_id ==f"{user_id}",Tweet.in_reply_to_user_id==f"{user_id}")
         )).all()
         return reply_tweets
        
-    def get_retweets(self, user_id: int):
-        retweets=self.session.scalars(select(Tweet).where(Tweet.retweet_original_user_id != None).where(
+    def get_retweets(self, user_id: int)->list[Tweet]:
+        retweets=self.session.scalars(base_query.where(Tweet.retweet_original_user_id != None).where(
             or_(Tweet.user_id ==f"{user_id}",Tweet.retweet_original_user_id==f"{user_id}")
         )).all()
         return retweets
-    def calculate_interaction_score(self,retweets:ScalarResult[Tweet], replies: ScalarResult[Tweet], user_id:int)->dict[int, int]:
+    def calculate_interaction_score(self,retweets:list[Tweet], replies: list[Tweet], user_id:int)->dict[int, int]:
+
         user_id=str(user_id)
         interaction_score={}
         retweets_user=[tweet.user_id if tweet.user_id != user_id else tweet.retweet_original_user_id for  index, tweet in enumerate(retweets)]
@@ -38,25 +42,28 @@ class RankingService:
             print(total_retweet_interaction, len(retweets))
             interaction_score[other_user_Id]= math.log(1+ 2*total_reply_interaction+total_retweet_interaction)
         return interaction_score
-    def calculate_hashtag_score(self,user_id:str, excluded_hashtags=list[str])->dict[int, int]:
-        user_hashtags =self.session.query(Tweet.hashtags).filter(Tweet.user_id == f"{user_id}").all()
-        user_hashtags = [hashtag for sublist in user_hashtags for hashtag in sublist]
-        user_hashtags = [hashtag.lower() for hashtag in user_hashtags if hashtag.lower() not in excluded_hashtags]
-        
+    def calculate_hashtag_score(self,user_id:str, excluded_hashtags: list[str])->dict[int, int]:
+        excluded_hashtags = [hashtag.lower() for hashtag in excluded_hashtags]
+        tweet_with_hashtags =self.session.scalars(base_query.where(Tweet.user_id == f"{user_id}")).all()
+        user_hashtags = [hashtag.lower() for tweet in tweet_with_hashtags for hashtag in tweet.hashtags]
+    
         if not user_hashtags:
-            return 0
-        matching_tweets =self. session.query(Tweet).filter(
-            Tweet.hashtags.any(func.lower(func.json_extract(Tweet.hashtags, '$[*]')).in_(user_hashtags))
-        ).all()
+            return {}
+    
+
+        matching_tweets = self.session.scalars(base_query.where(
+            func.json_array_elements_text(Tweet.hashtags).in_(user_hashtags)
+        )).all()
+    
+
         
-        # Step 3: Group tweets by user_id
         user_tweet_counts = {}
         for tweet in matching_tweets:
             for hashtag in tweet.hashtags:
                 if hashtag.lower() in user_hashtags:
                     user_tweet_counts[tweet.user_id] = user_tweet_counts.get(tweet.user_id, 0) + 1
         
-        # Step 4: Calculate hashtag scores for each user
+    
         scores = {}
         for user, count in user_tweet_counts.items():
             if count > 10:
@@ -67,55 +74,68 @@ class RankingService:
         
         return scores
   
-    def calculate_keyword_score(self,user_id, phrase, hashtag, tweet_type='both')->dict[int, int]:
-    # Prepare the query for tweets based on type
-        query = self.session.query(Tweet)
+
+
+    def calculate_keyword_score(self, user_id, phrase, hashtag, tweet_type='both') -> dict[int, int]:
+        query = base_query.where(Tweet.user_id == f"{user_id}")
         
         if tweet_type == 'reply':
-            query = query.filter(Tweet.in_reply_to_user_id.isnot(None))
+            query = query.where(Tweet.in_reply_to_user_id.isnot(None))
         elif tweet_type == 'retweet':
-            query = query.filter(Tweet.retweeted_status.isnot(None))
+            query = query.where(Tweet.retweeted_status.isnot(None))
         elif tweet_type == 'both':
-            query = query.filter(or_(Tweet.in_reply_to_user_id.isnot(None), Tweet.retweeted_status.isnot(None)))
-        
-        # Get tweets
-        tweets = query.all()
-        
-        # Initialize score
-        keyword_score = {}
-        
-        # Count phrase and hashtag occurrences
-        for tweet in tweets:
-            text = tweet.text.lower()
-            hashtags = [h.lower() for h in tweet.hashtags]
-            
-            # Phrase matches
-            phrase_matches = text.count(phrase.lower())
-            keyword_score += phrase_matches
-            
-            # Hashtag matches
-            hashtag_matches = hashtags.count(hashtag.lower())
-            keyword_score += hashtag_matches
+            query = query.where(or_(Tweet.in_reply_to_user_id.isnot(None), Tweet.retweeted_status.isnot(None)))
+    
 
-        return keyword_score
+        tweets = self.session.scalars(query).all()
+    
+        keyword_scores ={} 
+    
+        def count_phrase_occurrences(text, phrase):
+            count = 0
+            start = 0
+            while start < len(text):
+                start = text.find(phrase, start)
+                if start == -1:
+                    break
+                count += 1
+                start += 1  # Move to the next character to allow overlapping matches
+            return count
+    
+        for tweet in tweets:
+            text = tweet.text
+            hashtags = [h.lower() for h in tweet.hashtags]
+        
+            phrase_matches = count_phrase_occurrences(text, phrase)
+            if phrase_matches > 0:
+                keyword_scores[tweet.user_id] += phrase_matches
+        
+            hashtag_matches = hashtags.count(hashtag.lower())
+            if hashtag_matches > 0:
+                keyword_scores[tweet.user_id] += hashtag_matches
+        for user, matches in keyword_scores.items():
+            keyword_scores[user] = 1 + math.log(matches + 1)
+        return dict((user, score) for user, score in keyword_scores.items() if score > 0)
     def get_recommended_users(self, user_id:int,type:str, phrase: str, hashtag: str):
         user=self.get_user(user_id)
+        if not user:
+            return []
         retweets=self.get_retweets(user_id)
         replies=self.get_reply(user_id)
+        popular_hashtags=self.get_popular_hashtags()
         interaction_score=self.calculate_interaction_score(retweets, replies, user_id)
-        hashtag_score=self.calculate_hashtag_score(user_id, [hashtag])
+        hashtag_score=self.calculate_hashtag_score(user_id, [hashtag.hashtag for hashtag in popular_hashtags])
         same_keywords_score=self.calculate_keyword_score(user_id, phrase, hashtag)
         interacted_users=[key for key in enumerate(interaction_score) ]
         same_hashtag_users=[key for key in enumerate(hashtag_score) ]
         same_keywords_user=[key for key in enumerate(same_keywords_score)]
         recomendable_user_id=set(interacted_users+same_hashtag_users+same_keywords_user)
-        users=[
-        ]
-        for user_id in recomendable_user_id:
+        users=[]
+        for index,user_id in recomendable_user_id:
             user=self.get_user(user_id)
             score=interaction_score.get(user_id, 0)*hashtag_score.get(user_id, 0)*self.calculate_keyword_score(user_id, phrase, hashtag).get(user_id, 0)
             if user:
                 users.append({"user": user.__dict__, "score": score})
         # sort user by score
         users=sorted(users, key=lambda x: x['score'], reverse=True)
-        return users
+        return users if not not users else []
