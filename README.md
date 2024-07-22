@@ -61,7 +61,7 @@ Welcome to the Friend Recommendation System repository. This project includes tw
 
 5. **Access the API**
 
-   Once the services are running, you can access the API at `http://localhost/docs`.
+   Once the services are running, you can access the API at `http://wocalhost/docs`.
 
 ## Testing
 
