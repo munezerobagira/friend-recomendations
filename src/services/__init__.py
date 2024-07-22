@@ -1,1 +1,1 @@
-import services.ranking_service as ranking_service
+from  services.ranking_service  import RankingService

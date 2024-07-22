@@ -1,5 +1,5 @@
 
-from sqlalchemy import Column,  String, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import Column,  String, DateTime, Text, JSON, ForeignKey, Integer
 from models import Base
 from sqlalchemy.orm import relationship
 class Tweet(Base):
@@ -14,5 +14,11 @@ class Tweet(Base):
     user= relationship("User", back_populates="tweets")
     retweet_original_user_id = Column(String, nullable=True)
     retweeted_status = Column(JSON)
-    hashtags = Column(JSON)
-
+    retweeted_status_lang = Column(String, nullable=True)
+    hashtags = relationship("TweetHashTag", back_populates="tweet")
+class TweetHashTag(Base):
+    __tablename__ = 'tweet_hashtags'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tweet_id = Column(String, ForeignKey('tweets.id'))
+    hashtag = Column(String, nullable=False)
+    tweet = relationship("Tweet", back_populates="hashtags")

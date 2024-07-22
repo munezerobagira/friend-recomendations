@@ -6,3 +6,4 @@ include
 __pycache__
 *.env
 query2_ref.txt
+.pytest_cache

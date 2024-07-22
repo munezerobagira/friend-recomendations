@@ -4,7 +4,7 @@ import pytz
 from datetime import datetime
 from multiprocessing import Pool, cpu_count, Manager
 from database.session import create_db_session, create_tables
-from models import Tweet, User, PopularHashtag
+from models import Tweet, User, PopularHashtag, TweetHashTag
 
 utc=pytz.UTC
 
@@ -92,13 +92,16 @@ def save_tweets_chunk_to_database(args):
                 in_reply_to_user_id=in_reply_to_user_id,
                 user_id=user_id,
                 created_at=created_at,
-                hashtags=hashtags,
                 retweeted_status=retweeted_status,
+                retweeted_status_lang=retweeted_status.get('lang', None),
                 retweet_original_user_id=retweeted_status.get('user', {}).get('id_str') or retweeted_status.get('user', {}).get('id')
             )
 
             session.add(tweet_entry)
+            for hashtag in hashtags:
+                tweet_entry.hashtags.append(TweetHashTag(hashtag=hashtag, tweet=tweet_entry))
             session.commit()
+        
     session.close()
     # Update progress
     with lock:
