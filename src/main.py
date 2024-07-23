@@ -17,5 +17,6 @@ def ping():
 def recomendended_users(user_id:int,type:TweetType, phrase: str, hashtag: str):
     session=create_db_session()
     ranking_service=RankingService(session)
+    print("Processing request")
     recomendended_users=ranking_service.get_recommended_users(user_id,type.value,phrase,hashtag)
     return recomendended_users

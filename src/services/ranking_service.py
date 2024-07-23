@@ -119,28 +119,34 @@ class RankingService:
         return dict((user, score) for user, score in keyword_scores.items() if score > 0)
     def get_recommended_users(self, user_id:int,type:str, phrase: str, hashtag: str):
         user=self.get_user(user_id)
+        print(user)
         interaction_score={}
         hashtag_score={}
-        if not user:
-            return []
-        
+    
         retweets=self.get_retweets(user_id)
         replies=self.get_reply(user_id)
         popular_hashtags=self.get_popular_hashtags()
+        print("Fetched popular hashtag")
         if user:
             interaction_score=self.calculate_interaction_score(retweets, replies, user_id)
+            print("Fetched interaction score")
             hashtag_score=self.calculate_hashtag_score(user_id, [hashtag.hashtag for hashtag in popular_hashtags])
+            print("Fetched hashtag score")
         same_keywords_score=self.calculate_keyword_score(phrase, hashtag)
+        print("Fetched keyword score")
         interacted_users=[key for key in enumerate(interaction_score) ]
         same_hashtag_users=[key for key in enumerate(hashtag_score) ]
         same_keywords_user=[key for key in enumerate(same_keywords_score)]
         recomendable_user_id=set(interacted_users+same_hashtag_users+same_keywords_user)
+
         users=[]
         for index,user_id in recomendable_user_id:
-            user=self.get_user(user_id)
-            score=interaction_score.get(user_id, 0)*hashtag_score.get(user_id, 0)*self.calculate_keyword_score(user_id, phrase, hashtag).get(user_id, 0)
+            user=self.get_user(user_id) # improve this
+            score=interaction_score.get(f"{user_id}", 0)*hashtag_score.get(f"{user_id}", 0)*same_keywords_score.get(f"{user_id}", 0)
+            print("Score: ", user_id,interaction_score.get(f"{user_id}", 0), hashtag_score.get(f"{user_id}", 0), same_keywords_score.get(f"{user_id}", 0))
             if user:
-                users.append({"user": user.__dict__, "score": score})
+                users.append({"user_id": user.__dict__, "score": score})
         # sort user by score
+        print("Sorting users")
         users=sorted(users, key=lambda x: x['score'], reverse=True)
         return users
