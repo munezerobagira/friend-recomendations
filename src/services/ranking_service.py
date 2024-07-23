@@ -21,7 +21,6 @@ class RankingService:
         reply_tweets=self.session.scalars(base_query.where(Tweet.in_reply_to_user_id != None).where(
             or_(Tweet.user_id ==f"{user_id}",Tweet.in_reply_to_user_id==f"{user_id}")
         )).all()
-        print(reply_tweets)
         return reply_tweets
        
     def get_retweets(self, user_id: int)->list[Tweet]:
@@ -42,7 +41,6 @@ class RankingService:
             print(total_retweet_interaction, len(retweets))
             interaction_score[other_user_Id]= math.log(1+ 2*total_reply_interaction+total_retweet_interaction)
 
-        print(interaction_score)
         return interaction_score
     def calculate_hashtag_score(self,user_id:str, excluded_hashtags: list[str])->dict[int, int]:
         excluded_hashtags = [hashtag.lower() for hashtag in excluded_hashtags]
@@ -88,8 +86,6 @@ class RankingService:
         
         query=query.where(or_(Tweet.text.contains(phrase), TweetHashTag.hashtag.ilike(f"%{hashtag}%"), ))
         tweets = self.session.scalars(query).all()
-        print(len(tweets))
-    
         keyword_scores ={} 
     
         def count_phrase_occurrences(text, phrase):
@@ -119,34 +115,25 @@ class RankingService:
         return dict((user, score) for user, score in keyword_scores.items() if score > 0)
     def get_recommended_users(self, user_id:int,type:str, phrase: str, hashtag: str):
         user=self.get_user(user_id)
-        print(user)
         interaction_score={}
         hashtag_score={}
     
         retweets=self.get_retweets(user_id)
         replies=self.get_reply(user_id)
         popular_hashtags=self.get_popular_hashtags()
-        print("Fetched popular hashtag")
         if user:
             interaction_score=self.calculate_interaction_score(retweets, replies, user_id)
-            print("Fetched interaction score")
             hashtag_score=self.calculate_hashtag_score(user_id, [hashtag.hashtag for hashtag in popular_hashtags])
-            print("Fetched hashtag score")
         same_keywords_score=self.calculate_keyword_score(phrase, hashtag)
-        print("Fetched keyword score")
         interacted_users=[value for index,value in enumerate(interaction_score) ]
-        print("Interacted_______",interacted_users)
         same_hashtag_users=[value for index, value in enumerate(hashtag_score) ]
-        print("___same_hashtag__", same_hashtag_users)
         same_keywords_user=[value for index,value in enumerate(same_keywords_score)]
-        # print(same_keywords_user)
         recomendable_user_id=set(interacted_users+same_hashtag_users+same_keywords_user)
 
         users=[]
         for user_id in recomendable_user_id:
       
             score=interaction_score.get(f"{user_id}", 0)*hashtag_score.get(f"{user_id}", 0)*same_keywords_score.get(f"{user_id}", 0)
-            print("Score: ", user_id,interaction_score.get(f"{user_id}", 0), hashtag_score.get(f"{user_id}", 0), same_keywords_score.get(f"{user_id}", 0))
             if user:
                 users.append({"user_id":user_id, "score": score})
         users_name=self.session.scalars(select(User).where(User.user_id.in_([user["user_id"] for user in users]))).all()
