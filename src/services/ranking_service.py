@@ -149,9 +149,6 @@ class RankingService:
             print("Score: ", user_id,interaction_score.get(f"{user_id}", 0), hashtag_score.get(f"{user_id}", 0), same_keywords_score.get(f"{user_id}", 0))
             if user:
                 users.append({"user_id":user_id, "score": score})
-        # sort user by score
-        # fetch screen name for each user
-        # from users  fetch the user
         users_name=self.session.scalars(select(User).where(User.user_id.in_([user["user_id"] for user in users]))).all()
         users= [dict(user, **{"screen_name": user_name.screen_name}) for user, user_name in zip(users, users_name)]
         users=sorted(users, key=lambda x: x['score'], reverse=True)

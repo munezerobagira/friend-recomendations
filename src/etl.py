@@ -5,9 +5,9 @@ from datetime import datetime
 from multiprocessing import Pool, cpu_count, Manager
 from database.session import create_db_session, create_tables
 from models import Tweet, User, PopularHashtag, TweetHashTag
-from core.config import ALLOWED_LANGUAGES 
+from core.config import ALLOWED_LANGUAGES
 
-utc=pytz.UTC
+utc = pytz.UTC
 
 def extract_tweets_data():
     tweets = []
@@ -32,17 +32,69 @@ def extract_tweets_data():
 
     print(f"Total valid tweets parsed: {len(tweets)}")
     return tweets
-def extract_popular_hashtags()->list[str]:
-    hashtags = []
-    with open("src/etl/dataset/popular_hashtags.txt", "r",encoding='utf-8') as f:
-        hashtags=f.readlines()
 
-    print(f"Total valid hash parsed: {len(hashtags)}")
+def extract_popular_hashtags() -> list[str]:
+    hashtags = []
+    with open("src/etl/dataset/popular_hashtags.txt", "r", encoding='utf-8') as f:
+        hashtags = f.readlines()
+    hashtags = [hashtag.strip() for hashtag in hashtags]
+    print(f"Total valid hashtags parsed: {len(hashtags)}")
     return hashtags
-def save_tweets_chunk_to_database(args):
-    tweets_chunk, progress, total_chunks, lock = args
-    total_tweets = len(tweets_chunk)
+
+def extract_unique_users(tweets):
+    users = {}
+    for tweet in tweets:
+        user_data = tweet.get('user', {})
+        user_id = user_data.get('id_str') or user_data.get('id')
+        screen_name = user_data.get('screen_name')
+        users[user_id] = screen_name
+
+        retweeted_status = tweet.get('retweeted_status', {})
+        if retweeted_status:
+            retweeted_user_data = retweeted_status.get('user', {})
+            retweeted_user_id = retweeted_user_data.get('id_str') or retweeted_user_data.get('id')
+            retweeted_screen_name = retweeted_user_data.get('screen_name')
+            users[retweeted_user_id] = retweeted_screen_name
+    return users
+
+def save_users_chunk_to_database(users_chunk):
     session = create_db_session()
+    new_users = [User(id=user_id, user_id=user_id, screen_name=screen_name) for user_id, screen_name in users_chunk.items()]
+
+    try:
+        session.bulk_save_objects(new_users)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"Error saving users: {e}")
+    finally:
+        session.close()
+
+def save_hashtags_chunk_to_database(hashtags_chunk):
+    session = create_db_session()
+
+    # Fetch existing hashtags
+    existing_hashtags = session.query(PopularHashtag).filter(PopularHashtag.hashtag.in_(hashtags_chunk)).all()
+    existing_hashtag_set = {hashtag.hashtag for hashtag in existing_hashtags}
+
+    # Prepare list for new hashtags
+    new_hashtags = [PopularHashtag(hashtag=hashtag) for hashtag in hashtags_chunk if hashtag not in existing_hashtag_set]
+
+    # Bulk insert new hashtags
+    try:
+        if new_hashtags:
+            session.bulk_save_objects(new_hashtags)
+            session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"Error saving hashtags: {e}")
+    finally:
+        session.close()
+
+def save_tweets_chunk_to_database(tweets_chunk):
+    session = create_db_session()
+    new_tweets = []
+    new_hashtags = []
 
     for tweet in tweets_chunk:
         tweet_id = tweet.get('id_str') or tweet.get('id')
@@ -50,117 +102,98 @@ def save_tweets_chunk_to_database(args):
         in_reply_to_user_id = tweet.get('in_reply_to_user_id_str') or tweet.get('in_reply_to_user_id')
         user_data = tweet.get('user', {})
         retweeted_status = tweet.get('retweeted_status', {})
-        created_at=datetime.strptime(tweet.get('created_at'), '%a %b %d  %H:%M:%S %z %Y')
+        created_at = datetime.strptime(tweet.get('created_at'), '%a %b %d %H:%M:%S %z %Y')
         hashtags = tweet.get('entities', {}).get('hashtags', [])
-        hashtags = [hashtag.get('text') for hashtag in hashtags] 
-        lang= tweet.get('lang')
+        hashtags = [hashtag.get('text') for hashtag in hashtags]
+        lang = tweet.get('lang')
 
         user_id = user_data.get('id_str') or user_data.get('id')
-        screen_name = user_data.get('screen_name')
+        retweeted_user_id = retweeted_status.get('user', {}).get('id_str') or retweeted_status.get('user', {}).get('id')
 
+        tweet_entry = Tweet(
+            id=tweet_id,
+            tweet_id=tweet_id,
+            text=text,
+            in_reply_to_user_id=in_reply_to_user_id,
+            user_id=user_id,
+            created_at=created_at,
+            retweeted_status=retweeted_status,
+            retweeted_status_lang=retweeted_status.get('lang', None),
+            retweet_original_user_id=retweeted_user_id,
+            lang=lang
+        )
+        new_tweets.append(tweet_entry)
+        for hashtag in hashtags:
+            new_hashtags.append(TweetHashTag(hashtag=hashtag, tweet=tweet_entry))
 
+    # Bulk insert new tweets and hashtags
+    try:
+        if new_tweets:
+            session.bulk_save_objects(new_tweets)
+        if new_hashtags:
+            session.bulk_save_objects(new_hashtags)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        print(f"Error saving data: {e}")
+    finally:
+        session.close()
 
-
-
-        # Check if user exists in the database
-        user = session.query(User).filter_by(user_id=user_id).first()
-        if not user:
-            user = User(id=user_id, user_id=user_id, screen_name=screen_name, last_updated_at=created_at)
-            session.add(user)
-            session.commit()
-        else:
-            if(user.screen_name != screen_name and utc.localize(user.last_updated_at)< created_at):
-                user.screen_name = screen_name
-                session.commit()
-        if  not not retweeted_status:
-            retweeted_user_data = retweeted_status.get('user', {})
-            retweeted_user_id = retweeted_user_data.get('id_str') or retweeted_user_data.get('id')
-            retweeted_user = session.query(User).filter_by(user_id=retweeted_user_id).first()
-            if not retweeted_user:
-                retweeted_user = User(id=retweeted_user_id, user_id=retweeted_user_id, screen_name=retweeted_user_data.get('screen_name'), last_updated_at=created_at)
-                session.add(retweeted_user)
-                session.commit()
-            else:
-                if(retweeted_user.screen_name != retweeted_user_data.get('screen_name') and utc.localize(retweeted_user.last_updated_at)< created_at):
-                    retweeted_user.screen_name = retweeted_user_data.get('screen_name')
-                    session.commit()
-        # Create tweet entry
-        tweet_entry = session.query(Tweet).filter_by(id=tweet_id).first()
-        if not tweet_entry:
-            tweet_entry = Tweet(
-                id=tweet_id,
-                tweet_id=tweet_id,
-                text=text,
-                in_reply_to_user_id=in_reply_to_user_id,
-                user_id=user_id,
-                created_at=created_at,
-                retweeted_status=retweeted_status,
-                retweeted_status_lang=retweeted_status.get('lang', None),
-                retweet_original_user_id=retweeted_status.get('user', {}).get('id_str') or retweeted_status.get('user', {}).get('id'),
-                lang=lang
-            )
-
-            session.add(tweet_entry)
-            for hashtag in hashtags:
-                tweet_entry.hashtags.append(TweetHashTag(hashtag=hashtag, tweet=tweet_entry))
-            session.commit()
-        
-    session.close()
-    # Update progress
-    with lock:
-        progress.value += 1
-        print(f"Progress: {progress.value}/{total_chunks} chunks processed ({(progress.value / total_chunks) * 100:.2f}%)")
-def save_hashtags_to_database(hashtags: list[str]):
-    session = create_db_session()
-    for hashtag in hashtags:
-        hashtag_entry = session.query(PopularHashtag).filter_by(hashtag=hashtag).first()
-        if not hashtag_entry:
-            hashtag_entry = PopularHashtag(hashtag=hashtag)
-            session.add(hashtag_entry)
-            session.commit()
-    session.close()
-def chunks(lst: list, n: int):
+def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
-        yield lst[i:i+n]
+        yield lst[i:i + n]
 
-# Split tweets into chunks
-def load_to_database(tweets: list):
+def parallel_save(data, save_function):
     num_chunks = cpu_count()
-    chunk_size = len(tweets) // num_chunks
-    tweet_chunks = list(chunks(tweets, chunk_size))
-    total_chunks = len(tweet_chunks)
+    chunk_size = len(data) // num_chunks
+    data_chunks = list(chunks(data, chunk_size))
+    total_chunks = len(data_chunks)
     print(f"Spawning {total_chunks} processes to load data")
 
-    # Use Manager to track progress and lock
-    with Manager() as manager:
-        progress = manager.Value('i', 0)
-        lock = manager.Lock()
-        args = [(chunk, progress, total_chunks, lock) for chunk in tweet_chunks]
+    pool = Pool(processes=num_chunks)
+    try:
+        pool.map(save_function, data_chunks)
+        pool.close()
+        pool.join()
+    except KeyboardInterrupt:
+        print("Process interrupted by user. Terminating pool...")
+        pool.terminate()
+        pool.join()
+        sys.exit(0)
 
-        pool = Pool(processes=num_chunks)
-        try:
-            pool.map(save_tweets_chunk_to_database, args)  
-            pool.close()
-            pool.join()
-        except KeyboardInterrupt:
-            print("Process interrupted by user. Terminating pool...")
-            pool.terminate()
-            pool.join()
-            sys.exit(0)
+def parallel_save_dict(data_dict, save_function):
+    num_chunks = cpu_count()
+    chunk_size = len(data_dict) // num_chunks
+    data_chunks = [dict(list(data_dict.items())[i:i + chunk_size]) for i in range(0, len(data_dict), chunk_size)]
+    total_chunks = len(data_chunks)
+    print(f"Spawning {total_chunks} processes to load data")
 
-        print("Data successfully loaded into the database.")
+    pool = Pool(processes=num_chunks)
+    try:
+        pool.map(save_function, data_chunks)
+        pool.close()
+        pool.join()
+    except KeyboardInterrupt:
+        print("Process interrupted by user. Terminating pool...")
+        pool.terminate()
+        pool.join()
+        sys.exit(0)
+
+def load_to_database(tweets):
+    users = extract_unique_users(tweets)
+    parallel_save_dict(users, save_users_chunk_to_database)
+
+    parallel_save(tweets, save_tweets_chunk_to_database)
 
 if __name__ == '__main__':
     try:
-    
         create_tables()
         tweets = extract_tweets_data()
         load_to_database(tweets)
 
         hashtags = extract_popular_hashtags()
-        save_hashtags_to_database(hashtags)
+        parallel_save(hashtags, save_hashtags_chunk_to_database)
     except KeyboardInterrupt:
-        Manager.shutdown()
         print("Process interrupted by user")
         sys.exit(0)
