@@ -124,7 +124,7 @@ def save_tweets_chunk_to_database(tweets_chunk):
         )
         new_tweets.append(tweet_entry)
         for hashtag in hashtags:
-            new_hashtags.append(TweetHashTag(hashtag=hashtag, tweet=tweet_entry))
+            new_hashtags.append(TweetHashTag(hashtag=hashtag, tweet=tweet_entry, tweet_id=tweet_id))
 
     # Bulk insert new tweets and hashtags
     try:

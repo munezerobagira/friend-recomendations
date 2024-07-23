@@ -59,9 +59,18 @@ Welcome to the Friend Recommendation System repository. This project includes tw
    docker compose exec api python src/etl.py
    ```
 
+   quick note: if you are running the script on a local machine, you can use the following command:
+
+   ```bash
+   python src/etl.py
+
+   ```
+
+   as it would be more fast
+
 5. **Access the API**
 
-   Once the services are running, you can access the API at `http://wocalhost/docs`.
+   Once the services are running, you can access the API at `http://localhost/docs`.
 
 ## Testing
 
@@ -78,3 +87,30 @@ To run tests, use pytest with SQLite. The tests are configured to run automatica
 2. **GitHub Actions Workflow**
 
    The GitHub Actions workflow is set up to run tests on push and pull request events to the `main` branch.
+
+## Lessons Learned
+
+One important thing I learned is about database management. It's not possible to delete a database while it is in use, i.e., when there are some uncommitted transactions. It's better to properly handle closing connections so that transactions are either committed or rolled back before closing the connection. If you haven't handled closing connections well, you can close all connections to the database using:
+
+```sql
+SELECT
+ pg_terminate_backend(pid)
+FROM
+ pg_stat_activity
+WHERE
+ datname = '<TARGET_DB_NAME>'
+AND
+ leader_pid IS NULL
+;
+```
+
+## Achievements
+
+I am proud of improving the ETL process to save data in chunks to avoid memory errors using multiple processes. Previously, it was taking over 6 hours to save data to the cloud database, and now it takes a little over 40 minutes. For a local machine, it was over 10 minutes, but I managed to reduce it to below 40 seconds.
+
+The complex part was loading data on a server with only one CPU and 1GB of RAM. I had to use my computer locally, which has more RAM and CPU, and send the data to be saved in the database on the server, which increased the latency.
+
+## Future improvements
+
+- **Optimize the ETL process**: The ETL process can be further optimized to reduce the time it takes to load the data.
+- **Improve the API**: The API can be improved by reducing the response, when the pharse is too short and for the hashtag.
