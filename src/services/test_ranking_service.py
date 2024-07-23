@@ -33,11 +33,11 @@ def populate_data(session: Session):
     user2 = User(id=2,user_id=2, screen_name='User2')
     user3 = User(id=3,user_id=3, screen_name='User3')
 
-    tweet1 = Tweet(id=1, tweet_id=1, user_id=1, text='Hello World #python', created_at=datetime.now())
-    tweet2 = Tweet(id=2,tweet_id=2, user_id=1, text='Reply to User2 #python', in_reply_to_user_id=2,created_at=datetime.now() )
-    tweet3 = Tweet(id=3,tweet_id=3, user_id=2, text='Retweet from User1', retweet_original_user_id=1, created_at=datetime.now())
+    tweet1 = Tweet(id=1, tweet_id=1, user_id=1, text='Hello World #python', created_at=datetime.now(), lang="en")
+    tweet2 = Tweet(id=2,tweet_id=2, user_id=1, text='Reply to User2 #python', in_reply_to_user_id=2,created_at=datetime.now() ,lang="en" )
+    tweet3 = Tweet(id=3,tweet_id=3, user_id=2, text='Retweet from User1', retweet_original_user_id=1, created_at=datetime.now(),  lang="en")
     tweet4 = Tweet(id=4,tweet_id=4, user_id=2, text='Hello Python #coding', created_at=datetime.now())
-    tweet5 = Tweet(id=5,tweet_id=5, user_id=3, text='Reply to User1 #python', in_reply_to_user_id=1, created_at=datetime.now())
+    tweet5 = Tweet(id=5,tweet_id=5, user_id=3, text='Reply to User1 #python', in_reply_to_user_id=1, created_at=datetime.now(), lang="en")
 
     hashtag1 = TweetHashTag(tweet_id=1, hashtag='python')
     hashtag2 = TweetHashTag(tweet_id=2, hashtag='python')
@@ -67,7 +67,7 @@ def test_interaction_score(data_session):
 
 def test_hashtag_score(data_session):
     service = RankingService(data_session)
-    hashtag_score = service.calculate_hashtag_score(1, ['python', 'coding'])
+    hashtag_score = service.calculate_hashtag_score(1, ['coding'])
 
     assert hashtag_score.get("2", 0) == 0  # because the user_1 doesn't have any common hashtag with user_2
     assert hashtag_score.get("3", 0) == 1  # Only one common hashtag 'python'

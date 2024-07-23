@@ -152,8 +152,8 @@ if __name__ == '__main__':
     try:
     
         create_tables()
-        # tweets = extract_tweets_data()
-        # load_to_database(tweets)
+        tweets = extract_tweets_data()
+        load_to_database(tweets)
 
         hashtags = extract_popular_hashtags()
         save_hashtags_to_database(hashtags)
