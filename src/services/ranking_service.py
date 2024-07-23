@@ -77,7 +77,7 @@ class RankingService:
 
     def calculate_keyword_score(self, phrase:str, hashtag:str, tweet_type='both') -> dict[int, int]:
         
-        query = select(Tweet).join(TweetHashTag)
+        query = base_query.join(TweetHashTag)
         
         if tweet_type == 'reply':
             query = query.where(Tweet.in_reply_to_user_id.isnot(None))
@@ -134,19 +134,25 @@ class RankingService:
             print("Fetched hashtag score")
         same_keywords_score=self.calculate_keyword_score(phrase, hashtag)
         print("Fetched keyword score")
-        interacted_users=[key for key in enumerate(interaction_score) ]
-        same_hashtag_users=[key for key in enumerate(hashtag_score) ]
-        same_keywords_user=[key for key in enumerate(same_keywords_score)]
+        interacted_users=[value for index,value in enumerate(interaction_score) ]
+        print("Interacted_______",interacted_users)
+        same_hashtag_users=[value for index, value in enumerate(hashtag_score) ]
+        print("___same_hashtag__", same_hashtag_users)
+        same_keywords_user=[value for index,value in enumerate(same_keywords_score)]
+        # print(same_keywords_user)
         recomendable_user_id=set(interacted_users+same_hashtag_users+same_keywords_user)
 
         users=[]
-        for index,user_id in recomendable_user_id:
-            user=self.get_user(user_id) # improve this
+        for user_id in recomendable_user_id:
+      
             score=interaction_score.get(f"{user_id}", 0)*hashtag_score.get(f"{user_id}", 0)*same_keywords_score.get(f"{user_id}", 0)
             print("Score: ", user_id,interaction_score.get(f"{user_id}", 0), hashtag_score.get(f"{user_id}", 0), same_keywords_score.get(f"{user_id}", 0))
             if user:
-                users.append({"user_id": user.__dict__, "score": score})
+                users.append({"user_id":user_id, "score": score})
         # sort user by score
-        print("Sorting users")
+        # fetch screen name for each user
+        # from users  fetch the user
+        users_name=self.session.scalars(select(User).where(User.user_id.in_([user["user_id"] for user in users]))).all()
+        users= [dict(user, **{"screen_name": user_name.screen_name}) for user, user_name in zip(users, users_name)]
         users=sorted(users, key=lambda x: x['score'], reverse=True)
         return users

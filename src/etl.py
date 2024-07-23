@@ -5,6 +5,7 @@ from datetime import datetime
 from multiprocessing import Pool, cpu_count, Manager
 from database.session import create_db_session, create_tables
 from models import Tweet, User, PopularHashtag, TweetHashTag
+from core.config import ALLOWED_LANGUAGES 
 
 utc=pytz.UTC
 
@@ -52,6 +53,7 @@ def save_tweets_chunk_to_database(args):
         created_at=datetime.strptime(tweet.get('created_at'), '%a %b %d  %H:%M:%S %z %Y')
         hashtags = tweet.get('entities', {}).get('hashtags', [])
         hashtags = [hashtag.get('text') for hashtag in hashtags] 
+        lang= tweet.get('lang')
 
         user_id = user_data.get('id_str') or user_data.get('id')
         screen_name = user_data.get('screen_name')
@@ -94,7 +96,8 @@ def save_tweets_chunk_to_database(args):
                 created_at=created_at,
                 retweeted_status=retweeted_status,
                 retweeted_status_lang=retweeted_status.get('lang', None),
-                retweet_original_user_id=retweeted_status.get('user', {}).get('id_str') or retweeted_status.get('user', {}).get('id')
+                retweet_original_user_id=retweeted_status.get('user', {}).get('id_str') or retweeted_status.get('user', {}).get('id'),
+                lang=lang
             )
 
             session.add(tweet_entry)
