@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 from models import User, Tweet,PopularHashtag, TweetHashTag
 from core.config import ALLOWED_LANGUAGES
-base_query = select(Tweet)
+base_query = select(Tweet).where(Tweet.lang.in_(ALLOWED_LANGUAGES))
 
 class RankingService:
     def __init__(self, session:Session):
@@ -46,12 +46,10 @@ class RankingService:
         return interaction_score
     def calculate_hashtag_score(self,user_id:str, excluded_hashtags: list[str])->dict[int, int]:
         excluded_hashtags = [hashtag.lower() for hashtag in excluded_hashtags]
-        tweet_with_hashtags =self.session.scalars(base_query.where(Tweet.user_id == f"{user_id}").join(TweetHashTag)).all()
+        tweet_with_hashtags =self.session.scalars(base_query.where(Tweet.user_id == f"{user_id}").where(TweetHashTag.hashtag.not_in(excluded_hashtags)).join(TweetHashTag)).all()
     
         user_hashtags = [hashtag.__dict__.get("hashtag") for tweet in tweet_with_hashtags for hashtag in tweet.hashtags]
         user_hashtags=list(set(user_hashtags))
-        print(user_hashtags)
-    
         if not user_hashtags:
             return {}
     
@@ -89,7 +87,6 @@ class RankingService:
             query = query.where(or_(Tweet.in_reply_to_user_id.isnot(None), Tweet.retweet_original_user_id.isnot(None)))
         
         query=query.where(or_(Tweet.text.contains(phrase), TweetHashTag.hashtag.ilike(f"%{hashtag}%"), ))
-        print(query)
         tweets = self.session.scalars(query).all()
         print(len(tweets))
     
@@ -122,13 +119,17 @@ class RankingService:
         return dict((user, score) for user, score in keyword_scores.items() if score > 0)
     def get_recommended_users(self, user_id:int,type:str, phrase: str, hashtag: str):
         user=self.get_user(user_id)
+        interaction_score={}
+        hashtag_score={}
         if not user:
             return []
+        
         retweets=self.get_retweets(user_id)
         replies=self.get_reply(user_id)
         popular_hashtags=self.get_popular_hashtags()
-        interaction_score=self.calculate_interaction_score(retweets, replies, user_id)
-        hashtag_score=self.calculate_hashtag_score(user_id, [hashtag.hashtag for hashtag in popular_hashtags])
+        if user:
+            interaction_score=self.calculate_interaction_score(retweets, replies, user_id)
+            hashtag_score=self.calculate_hashtag_score(user_id, [hashtag.hashtag for hashtag in popular_hashtags])
         same_keywords_score=self.calculate_keyword_score(phrase, hashtag)
         interacted_users=[key for key in enumerate(interaction_score) ]
         same_hashtag_users=[key for key in enumerate(hashtag_score) ]
